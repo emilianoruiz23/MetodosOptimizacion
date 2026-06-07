@@ -294,15 +294,23 @@ elif menu == "4. Análisis de Sensibilidad":
         ax.set_xlim(-2, 21); ax.set_ylim(-10, 22); plt.axis('off')
         st.pyplot(fig)
 
-# --- 5. PROGRAMACION LINEAL ENTERA (PLE) ---
+# --- 5. PROGRAMACION LINEAL ENTERA (PLE) Y BRANCH & BOUND ---
 elif menu == "5. Programación Lineal Entera (PLE)":
-    st.header("📐 Programación Lineal Entera (PLE)")
-    st.write("Resolución formal del problema empleando ecuaciones algebraicas explícitas y variables estrictamente enteras ($x_{ij} \in \{0,1\}$).")
+    st.header("🌳 PLE y Método de Ramificación y Acotamiento")
+    st.write("Resolución del problema mediante Programación Entera, formulando las restricciones y demostrando la exploración del Árbol de Branch & Bound.")
     
     u_ple, v_ple = selector_nodos("ple_or", "ple_des")
     
     if u_ple != v_ple:
-        # Estructuración matemática del modelo de flujo
+        # 1. Formulación del Modelo Matemático
+        st.subheader("1. Formulación del Modelo")
+        st.markdown("**Función Objetivo (Minimizar Costo/Distancia):**")
+        st.latex(r"\min Z = \sum_{(i,j) \in A} c_{ij} x_{ij}")
+        st.markdown("**Restricciones de Conservación de Flujo:**")
+        st.latex(r"\sum_{j: (i,j) \in A} x_{ij} - \sum_{j: (j,i) \in A} x_{ji} = \begin{cases} 1, & i = \text{Origen} \\ -1, & i = \text{Destino} \\ 0, & \text{Nodos de transbordo} \end{cases}")
+        st.latex(r"x_{ij} \in \{0, 1\} \quad \forall (i,j) \in A")
+
+        # Preparación de datos para el optimizador
         edges_dir = []
         for u_edge, v_edge, data in G.edges(data=True):
             edges_dir.append((u_edge, v_edge, data['weight']))
@@ -312,48 +320,91 @@ elif menu == "5. Programación Lineal Entera (PLE)":
         nodos_lista = sorted(list(G.nodes()), key=lambda x: int(x[1:]))
         nodo_to_idx = {nodo: i for i, nodo in enumerate(nodos_lista)}
         
-        # Función Objetivo: c^T * x
         c = [peso for _, _, peso in edges_dir]
-        
-        # Restricciones de Igualdad: A_eq * x = b_eq
         A_eq = np.zeros((len(nodos_lista), num_edges))
         b_eq = np.zeros(len(nodos_lista))
         
         for idx_n, nodo in enumerate(nodos_lista):
             for idx_e, (o, d, _) in enumerate(edges_dir):
-                if o == nodo: A_eq[idx_n, idx_e] = 1   # Flujo de Salida
-                if d == nodo: A_eq[idx_n, idx_e] = -1  # Flujo de Entrada
+                if o == nodo: A_eq[idx_n, idx_e] = 1
+                if d == nodo: A_eq[idx_n, idx_e] = -1
                 
         b_eq[nodo_to_idx[u_ple]] = 1
         b_eq[nodo_to_idx[v_ple]] = -1
+
+        st.markdown("---")
+        st.subheader("2. Resolución Algorítmica y Árbol de Búsqueda")
         
-        # Restricción de Integraleza: Variables binarias {0, 1}
-        integrality = np.ones(num_edges) 
-        bounds = [(0, 1) for _ in range(num_edges)]
-        
-        # Ejecución del Optimizador (Método Highs)
-        res = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, integrality=integrality, method='highs')
-        
-        if res.success:
-            costo_ple = int(round(res.fun))
-            st.success(f"**Solución entera óptima calculada:** {costo_ple} metros")
+        if st.button("▶️ Ejecutar Branch & Bound y Generar Árbol"):
+            # NODO RAÍZ: Relajación Continua
+            bounds_root = [(0, 1) for _ in range(num_edges)]
+            res_root = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds_root, method='highs')
             
-            # Reconstrucción del camino óptimo a partir del vector x
-            aristas_activas = [edges_dir[i] for i in range(num_edges) if res.x[i] > 0.5]
-            
-            st.markdown("### 🔍 Variables de Decisión Activas ($x_{ij} = 1$):")
-            for o, d, w in aristas_activas:
-                st.markdown(f"- $x_{{{o},{d}}} = 1$: Se transita del nodo **{o}** al nodo **{d}** (Distancia: {w}m)")
+            if res_root.success:
+                z_root = res_root.fun
+                aristas_activas = [i for i, x in enumerate(res_root.x) if x > 0.5]
                 
-            st.markdown("### 📝 Formulación Estructural Ejecutada:")
-            st.latex(r"\min Z = \sum_{(i,j) \in A} c_{ij} x_{ij}")
-            st.markdown("**Sujeto a restricciones de conservación:**")
-            st.latex(r"\sum_{j: (i,j) \in A} x_{ij} - \sum_{j: (j,i) \in A} x_{ji} = \begin{cases} 1, & i = \text{Origen} \\ -1, & i = \text{Destino} \\ 0, & \text{en otro caso} \end{cases}")
-            st.latex(r"x_{ij} \in \{0, 1\} \quad \forall (i,j) \in A")
-        else:
-            st.error("El solucionador de programación entera no encontró una solución factible.")
+                st.info("💡 **Nota Analítica:** Por la propiedad de **Total Unimodularidad (TUM)** de las redes, la relajación continua en el Nodo Raíz arroja naturalmente variables enteras. Para ilustrar el método de Ramificación, forzaremos divisiones sobre una de las variables activas de la ruta.")
+
+                if aristas_activas:
+                    # Seleccionamos la primera arista activa para ramificar
+                    branch_idx = aristas_activas[0]
+                    u_b, v_b, w_b = edges_dir[branch_idx]
+                    
+                    # RAMA 1: x_ij = 0 (Acotamiento inferior / Buscar ruta alterna)
+                    bounds_1 = bounds_root.copy()
+                    bounds_1[branch_idx] = (0, 0)
+                    res_1 = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds_1, method='highs')
+                    z_1 = res_1.fun if res_1.success else "Infact."
+                    
+                    # RAMA 2: x_ij = 1 (Mantener la ruta óptima)
+                    bounds_2 = bounds_root.copy()
+                    bounds_2[branch_idx] = (1, 1)
+                    res_2 = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds_2, method='highs')
+                    z_2 = res_2.fun if res_2.success else "Infact."
+
+                    # --- GRAFICAR EL ÁRBOL ---
+                    fig_tree, ax_tree = plt.subplots(figsize=(12, 7))
+                    T = nx.DiGraph()
+                    
+                    # Definición de Nodos del Árbol
+                    lbl_root = f"Nodo Raíz (P0)\nRelajación Continua\nZ = {int(z_root)}m\n¡Solución Entera!"
+                    lbl_b1 = f"Nodo 1 (P1)\nForzando $x_{{{u_b},{v_b}}} = 0$\nZ = {int(z_1) if res_1.success else 'Infactible'}\n(Costo Mayor - Acotado)"
+                    lbl_b2 = f"Nodo 2 (P2)\nForzando $x_{{{u_b},{v_b}}} = 1$\nZ = {int(z_2) if res_2.success else 'Infactible'}\n(Óptimo Localizado)"
+                    
+                    T.add_node(lbl_root, pos=(0, 2))
+                    T.add_node(lbl_b1, pos=(-1, 1))
+                    T.add_node(lbl_b2, pos=(1, 1))
+                    
+                    T.add_edge(lbl_root, lbl_b1, label=f"x_({u_b},{v_b}) = 0")
+                    T.add_edge(lbl_root, lbl_b2, label=f"x_({u_b},{v_b}) = 1")
+                    
+                    pos_tree = nx.get_node_attributes(T, 'pos')
+                    colores_nodos = ['#87CEFA', '#FF9999', '#98FB98'] # Azul, Rojo, Verde
+                    
+                    nx.draw(T, pos_tree, with_labels=True, node_size=7500, node_shape='s',
+                            node_color=colores_nodos, font_size=9, font_weight='bold', ax=ax_tree, edge_color='gray', width=2, arrows=True, arrowsize=20)
+                    
+                    edge_labels = nx.get_edge_attributes(T, 'label')
+                    nx.draw_networkx_edge_labels(T, pos_tree, edge_labels=edge_labels, font_size=10, font_color='red', ax=ax_tree)
+                    
+                    ax_tree.set_title("Estructura del Árbol de Ramificación y Acotamiento", fontsize=14, fontweight='bold', pad=20)
+                    ax_tree.set_xlim(-2, 2)
+                    ax_tree.set_ylim(0.5, 2.5)
+                    plt.axis('off')
+                    st.pyplot(fig_tree)
+                    
+                    # Resultados Finales
+                    st.success(f"**Valor de Z Óptimo Final:** {int(z_root)} metros")
+                    
+                    st.markdown("### 🔍 Variables de Decisión Activas ($x_{ij} = 1$):")
+                    for i in aristas_activas:
+                        o, d, w = edges_dir[i]
+                        st.markdown(f"- $x_{{{o},{d}}} = 1$ (Distancia: {w}m)")
+            else:
+                st.error("El optimizador no pudo encontrar una solución factible.")
     else:
-        st.warning("Selecciona nodos distintos para estructurar las restricciones de flujo.")
+        st.warning("Selecciona nodos distintos para que el algoritmo pueda calcular el flujo.")
 
 # --- 6. CONCLUSIONES Y REFERENCIAS ---
 elif menu == "6. Conclusiones y Referencias":
