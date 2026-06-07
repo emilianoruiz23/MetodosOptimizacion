@@ -63,7 +63,7 @@ menu = st.sidebar.radio(
         "2. Ruta Más Corta (Dijkstra)", 
         "3. Matriz de Rutas (Floyd-Warshall)", 
         "4. Análisis de Sensibilidad", 
-        "5. Programación Lineal Entera (PLE)",
+        "5. Programación Entera Pura (PEP)",
         "6. Conclusiones y Referencias"
     )
 )
@@ -294,21 +294,22 @@ elif menu == "4. Análisis de Sensibilidad":
         ax.set_xlim(-2, 21); ax.set_ylim(-10, 22); plt.axis('off')
         st.pyplot(fig)
 
-# --- 5. PROGRAMACION LINEAL ENTERA (PLE) Y BRANCH & BOUND ---
-elif menu == "5. Programación Lineal Entera (PLE)":
-    st.header("🌳 PLE y Método de Ramificación y Acotamiento")
-    st.write("Resolución del problema mediante Programación Entera, formulando las restricciones y demostrando la exploración del Árbol de Branch & Bound.")
+# --- 5. PROGRAMACION ENTERA PURA (PEP) Y BRANCH & BOUND ---
+elif menu == "5. Programación Entera Pura (PEP)":
+    st.header("🌳 PEP y Método de Ramificación y Acotamiento")
+    st.write("Resolución del problema modelado como Programación Entera Pura (PEP). Todas las variables están estrictamente restringidas a ser binarias. Se demuestra la exploración iterativa de un Árbol de Branch & Bound expandido.")
     
     u_ple, v_ple = selector_nodos("ple_or", "ple_des")
     
     if u_ple != v_ple:
         # 1. Formulación del Modelo Matemático
-        st.subheader("1. Formulación del Modelo")
+        st.subheader("1. Formulación Matemática (PEP)")
+        st.markdown("**Naturaleza de las Variables:**")
+        st.latex(r"x_{ij} \in \{0, 1\} \quad \forall (i,j) \in A \quad \text{(Entero Puro)}")
         st.markdown("**Función Objetivo (Minimizar Costo/Distancia):**")
         st.latex(r"\min Z = \sum_{(i,j) \in A} c_{ij} x_{ij}")
         st.markdown("**Restricciones de Conservación de Flujo:**")
         st.latex(r"\sum_{j: (i,j) \in A} x_{ij} - \sum_{j: (j,i) \in A} x_{ji} = \begin{cases} 1, & i = \text{Origen} \\ -1, & i = \text{Destino} \\ 0, & \text{Nodos de transbordo} \end{cases}")
-        st.latex(r"x_{ij} \in \{0, 1\} \quad \forall (i,j) \in A")
 
         # Preparación de datos para el optimizador
         edges_dir = []
@@ -333,10 +334,10 @@ elif menu == "5. Programación Lineal Entera (PLE)":
         b_eq[nodo_to_idx[v_ple]] = -1
 
         st.markdown("---")
-        st.subheader("2. Resolución Algorítmica y Árbol de Búsqueda")
+        st.subheader("2. Árbol de Búsqueda de Branch & Bound (Profundidad Nivel 2)")
         
-        if st.button("▶️ Ejecutar Branch & Bound y Generar Árbol"):
-            # NODO RAÍZ: Relajación Continua
+        if st.button("▶️ Ejecutar Algoritmo y Generar Árbol Completo"):
+            # NODO RAÍZ P0
             bounds_root = [(0, 1) for _ in range(num_edges)]
             res_root = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds_root, method='highs')
             
@@ -344,63 +345,86 @@ elif menu == "5. Programación Lineal Entera (PLE)":
                 z_root = res_root.fun
                 aristas_activas = [i for i, x in enumerate(res_root.x) if x > 0.5]
                 
-                st.info("💡 **Nota Analítica:** Por la propiedad de **Total Unimodularidad (TUM)** de las redes, la relajación continua en el Nodo Raíz arroja naturalmente variables enteras. Para ilustrar el método de Ramificación, forzaremos divisiones sobre una de las variables activas de la ruta.")
+                st.info("💡 **Desarrollo del Árbol:** Evaluamos la relajación en P0. Para demostrar el acotamiento, forzaremos divisiones iterativas explorando los dos primeros pasos secuenciales de la ruta óptima.")
 
-                if aristas_activas:
-                    # Seleccionamos la primera arista activa para ramificar
-                    branch_idx = aristas_activas[0]
-                    u_b, v_b, w_b = edges_dir[branch_idx]
+                if len(aristas_activas) >= 2:
+                    # Seleccionamos las dos primeras aristas de la ruta para ramificar a mayor profundidad
+                    idx_e1 = aristas_activas[0]
+                    idx_e2 = aristas_activas[1]
                     
-                    # RAMA 1: x_ij = 0 (Acotamiento inferior / Buscar ruta alterna)
-                    bounds_1 = bounds_root.copy()
-                    bounds_1[branch_idx] = (0, 0)
+                    u1, v1, w1 = edges_dir[idx_e1]
+                    u2, v2, w2 = edges_dir[idx_e2]
+                    
+                    # --- NIVEL 1 ---
+                    # NODO P1 (Bloquear primer arco)
+                    bounds_1 = bounds_root.copy(); bounds_1[idx_e1] = (0, 0)
                     res_1 = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds_1, method='highs')
-                    z_1 = res_1.fun if res_1.success else "Infact."
+                    z_1 = res_1.fun if res_1.success else np.inf
                     
-                    # RAMA 2: x_ij = 1 (Mantener la ruta óptima)
-                    bounds_2 = bounds_root.copy()
-                    bounds_2[branch_idx] = (1, 1)
+                    # NODO P2 (Forzar primer arco)
+                    bounds_2 = bounds_root.copy(); bounds_2[idx_e1] = (1, 1)
                     res_2 = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds_2, method='highs')
-                    z_2 = res_2.fun if res_2.success else "Infact."
+                    z_2 = res_2.fun if res_2.success else np.inf
 
-                    # --- GRAFICAR EL ÁRBOL ---
-                    fig_tree, ax_tree = plt.subplots(figsize=(12, 7))
+                    # --- NIVEL 2 (A partir de P2) ---
+                    # NODO P3 (Forzar primer arco, Bloquear segundo arco)
+                    bounds_3 = bounds_root.copy(); bounds_3[idx_e1] = (1, 1); bounds_3[idx_e2] = (0, 0)
+                    res_3 = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds_3, method='highs')
+                    z_3 = res_3.fun if res_3.success else np.inf
+                    
+                    # NODO P4 (Forzar primer y segundo arco -> Lleva al óptimo)
+                    bounds_4 = bounds_root.copy(); bounds_4[idx_e1] = (1, 1); bounds_4[idx_e2] = (1, 1)
+                    res_4 = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds_4, method='highs')
+                    z_4 = res_4.fun if res_4.success else np.inf
+
+                    # --- GRAFICAR EL ÁRBOL AMPLIADO ---
+                    fig_tree, ax_tree = plt.subplots(figsize=(14, 8))
                     T = nx.DiGraph()
                     
-                    # Definición de Nodos del Árbol
-                    lbl_root = f"Nodo Raíz (P0)\nRelajación Continua\nZ = {int(z_root)}m\n¡Solución Entera!"
-                    lbl_b1 = f"Nodo 1 (P1)\nForzando $x_{{{u_b},{v_b}}} = 0$\nZ = {int(z_1) if res_1.success else 'Infactible'}\n(Costo Mayor - Acotado)"
-                    lbl_b2 = f"Nodo 2 (P2)\nForzando $x_{{{u_b},{v_b}}} = 1$\nZ = {int(z_2) if res_2.success else 'Infactible'}\n(Óptimo Localizado)"
+                    def formato_z(val): return f"Z = {int(val)}m" if val != np.inf else "Infactible"
                     
-                    T.add_node(lbl_root, pos=(0, 2))
-                    T.add_node(lbl_b1, pos=(-1, 1))
-                    T.add_node(lbl_b2, pos=(1, 1))
+                    lbl_p0 = f"P0 (Raíz)\n{formato_z(z_root)}"
+                    lbl_p1 = f"P1\nForzando $x_{{{u1},{v1}}} = 0$\n{formato_z(z_1)}\n[ACOTADO]"
+                    lbl_p2 = f"P2\nForzando $x_{{{u1},{v1}}} = 1$\n{formato_z(z_2)}\n(Continúa exploración...)"
+                    lbl_p3 = f"P3\nForzando $x_{{{u2},{v2}}} = 0$\n{formato_z(z_3)}\n[ACOTADO]"
+                    lbl_p4 = f"P4\nForzando $x_{{{u2},{v2}}} = 1$\n{formato_z(z_4)}\n[ÓPTIMO ENTERO PURO]"
                     
-                    T.add_edge(lbl_root, lbl_b1, label=f"x_({u_b},{v_b}) = 0")
-                    T.add_edge(lbl_root, lbl_b2, label=f"x_({u_b},{v_b}) = 1")
+                    # Posiciones en forma de árbol extendido
+                    T.add_node(lbl_p0, pos=(0, 4))
+                    T.add_node(lbl_p1, pos=(-2, 2))
+                    T.add_node(lbl_p2, pos=(2, 2))
+                    T.add_node(lbl_p3, pos=(0, 0))
+                    T.add_node(lbl_p4, pos=(4, 0))
+                    
+                    T.add_edge(lbl_p0, lbl_p1, label=f"x_({u1},{v1}) = 0")
+                    T.add_edge(lbl_p0, lbl_p2, label=f"x_({u1},{v1}) = 1")
+                    T.add_edge(lbl_p2, lbl_p3, label=f"x_({u2},{v2}) = 0")
+                    T.add_edge(lbl_p2, lbl_p4, label=f"x_({u2},{v2}) = 1")
                     
                     pos_tree = nx.get_node_attributes(T, 'pos')
-                    colores_nodos = ['#87CEFA', '#FF9999', '#98FB98'] # Azul, Rojo, Verde
                     
-                    nx.draw(T, pos_tree, with_labels=True, node_size=7500, node_shape='s',
-                            node_color=colores_nodos, font_size=9, font_weight='bold', ax=ax_tree, edge_color='gray', width=2, arrows=True, arrowsize=20)
+                    # Colores: P0 (Azul), P1 y P3 acotados (Rojo), P2 intermedio (Gris), P4 óptimo (Verde)
+                    colores_nodos = ['#87CEFA', '#FF9999', '#D3D3D3', '#FF9999', '#98FB98']
+                    
+                    nx.draw(T, pos_tree, with_labels=True, node_size=8500, node_shape='s',
+                            node_color=colores_nodos, font_size=9, font_weight='bold', ax=ax_tree, edge_color='gray', width=2.5, arrows=True, arrowsize=20)
                     
                     edge_labels = nx.get_edge_attributes(T, 'label')
-                    nx.draw_networkx_edge_labels(T, pos_tree, edge_labels=edge_labels, font_size=10, font_color='red', ax=ax_tree)
+                    nx.draw_networkx_edge_labels(T, pos_tree, edge_labels=edge_labels, font_size=11, font_color='black', ax=ax_tree, bbox=dict(facecolor='white', edgecolor='none', alpha=0.8))
                     
-                    ax_tree.set_title("Estructura del Árbol de Ramificación y Acotamiento", fontsize=14, fontweight='bold', pad=20)
-                    ax_tree.set_xlim(-2, 2)
-                    ax_tree.set_ylim(0.5, 2.5)
-                    plt.axis('off')
+                    ax_tree.set_title("Estructura Expandida del Árbol de Ramificación y Acotamiento", fontsize=15, fontweight='bold', pad=20)
+                    ax_tree.set_xlim(-3.5, 5.5); ax_tree.set_ylim(-0.5, 4.5); plt.axis('off')
                     st.pyplot(fig_tree)
                     
                     # Resultados Finales
-                    st.success(f"**Valor de Z Óptimo Final:** {int(z_root)} metros")
+                    st.success(f"**Solución Entera Pura Encontrada:** {int(z_root)} metros")
                     
-                    st.markdown("### 🔍 Variables de Decisión Activas ($x_{ij} = 1$):")
+                    st.markdown("### 🔍 Variables Binarias Activas ($x_{ij} = 1$):")
                     for i in aristas_activas:
                         o, d, w = edges_dir[i]
-                        st.markdown(f"- $x_{{{o},{d}}} = 1$ (Distancia: {w}m)")
+                        st.markdown(f"- Transitar del nodo **{o}** al nodo **{d}** ($x_{{{o},{d}}} = 1$)")
+                else:
+                    st.warning("La ruta es demasiado corta (1 paso) para graficar múltiples niveles de ramificación.")
             else:
                 st.error("El optimizador no pudo encontrar una solución factible.")
     else:
@@ -415,7 +439,7 @@ elif menu == "6. Conclusiones y Referencias":
         "Métrica / Criterio": ["Tipo de Algoritmo", "Complejidad Operativa", "Garantía de Optimalidad", "Sensibilidad al Escenario", "Formato de Salida"],
         "Dijkstra": ["Algoritmo Codicioso (Greedy)", "Baja: $O(V^2)$ o $O(E + V \log V)$", "Exacta (Sin pesos negativos)", "Requiere recalcular desde cero", "Secuencia de nodos única"],
         "Floyd-Warshall": ["Programación Dinámica", "Media-Alta: $O(V^3)$", "Exacta (Permite pesos negativos)", "Muestra impactos globales", "Matrices de distancias completas"],
-        "Programación Entera (PLE)": ["Optimización Matemática", "Alta (NP-hard en general)", "Exacta Global", "Modificación matemática de vectores", "Flujo binario por arcos"]
+        "Programación Entera Pura (PEP)": ["Optimización Matemática", "Alta (NP-hard en general)", "Exacta Global", "Modificación matemática de vectores", "Flujo binario por arcos"]
     }
     st.dataframe(pd.DataFrame(data_comp), hide_index=True, use_container_width=True)
     
@@ -423,7 +447,7 @@ elif menu == "6. Conclusiones y Referencias":
     st.markdown("""
     El análisis comparativo de la red del Bosque de Chapultepec demuestra que, para problemas de rutas uniorigen-unidestino estándar, el algoritmo de **Dijkstra** destaca por su eficiencia y velocidad computacional. Sin embargo, al enfrentar problemas de planeación logística integral donde se requiere conocer las interconexiones totales de la red, **Floyd-Warshall** proporciona una infraestructura matricial robusta ideal para decisiones centralizadas. 
     
-    Por otro lado, la **Programación Lineal Entera (PLE)** abre las puertas a modelados mucho más complejos, ya que permite añadir restricciones operativas del mundo real (como capacidades de flujo en senderos, sentidos de circulación únicos o ventanas de tiempo) que los algoritmos tradicionales de grafos no pueden asimilar directamente, consolidándose como la herramienta más flexible y escalable de la optimización matemática contemporánea.
+    Por otro lado, la **Programación Entera Pura (PEP)** abre las puertas a modelados mucho más complejos, ya que permite añadir restricciones operativas del mundo real (como capacidades de flujo en senderos, sentidos de circulación únicos o ventanas de tiempo) que los algoritmos tradicionales de grafos no pueden asimilar directamente, consolidándose como la herramienta más flexible y escalable de la optimización matemática contemporánea.
     """)
     
     st.subheader("📚 Referencias (Formato APA 7)")
