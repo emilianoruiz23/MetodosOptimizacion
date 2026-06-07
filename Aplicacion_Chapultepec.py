@@ -230,6 +230,29 @@ elif menu == "4. Análisis de Sensibilidad":
             c1, c2 = st.columns(2)
             c1.metric("Longitud del Recorrido (N6 ➡️ N9)", f"{costo} m", delta=f"+{costo - c_base} m (Desvío)" if bloqueo else "0 m")
             c2.write(f"**Camino Activo:** " + " ➡️ ".join([f"**{n}**" for n in ruta]))
+            
+            fig, ax = plt.subplots(figsize=(14, 9))
+            nx.draw_networkx_nodes(G, posiciones, node_color='#E0E0E0', node_size=500, edgecolors='white', ax=ax)
+            nx.draw_networkx_edges(G, posiciones, edge_color='#E0E0E0', width=1.0, ax=ax)
+            
+            aristas_ruta = list(zip(ruta, ruta[1:]))
+            colores_ruta = [mapa_colores[n] for n in ruta]
+            nx.draw_networkx_nodes(G, posiciones, nodelist=ruta, node_color=colores_ruta, node_size=800, edgecolors='black', linewidths=2, ax=ax)
+            nx.draw_networkx_edges(G, posiciones, edgelist=aristas_ruta, edge_color='red', width=3.5, ax=ax)
+            nx.draw_networkx_labels(G, posiciones, labels={n: n for n in ruta}, font_size=10, font_weight='bold', ax=ax)
+            
+            edge_labels = nx.get_edge_attributes(G_s, 'weight')
+            path_edge_labels = { (u, v): edge_labels.get((u,v), edge_labels.get((v,u))) for u, v in aristas_ruta }
+            nx.draw_networkx_edge_labels(G_s, posiciones, edge_labels=path_edge_labels, font_color='red', font_weight='bold', bbox=dict(facecolor='white', edgecolor='red', boxstyle='round,pad=0.2'), ax=ax)
+            
+            if bloqueo and G.has_edge('N6', 'N7'):
+                nx.draw_networkx_edges(G, posiciones, edgelist=[('N6', 'N7')], edge_color='red', width=2.0, style='dashed', ax=ax)
+                x_mid, y_mid = (posiciones['N6'][0] + posiciones['N7'][0])/2, (posiciones['N6'][1] + posiciones['N7'][1])/2 + 0.8
+                ax.text(x_mid, y_mid, "❌ CERRADO", color='red', fontsize=11, ha='center', va='center', backgroundcolor='white', fontweight='bold')
+            
+            ax.set_xlim(-2, 21); ax.set_ylim(-10, 22); plt.axis('off')
+            st.pyplot(fig)
+            
         except nx.NetworkXNoPath: st.error("Incomunicación crítica.")
         
     else:
@@ -248,8 +271,31 @@ elif menu == "4. Análisis de Sensibilidad":
         c1.metric("Longitud del Recorrido (N1 ➡️ N5)", f"{costo} m", delta=f"+{costo - c_base} m (Desvío Inteligente)" if congestion else "0 m")
         c2.write(f"**Camino Activo:** " + " ➡️ ".join([f"**{n}**" for n in ruta]))
 
+        fig, ax = plt.subplots(figsize=(14, 9))
+        nx.draw_networkx_nodes(G, posiciones, node_color='#E0E0E0', node_size=500, edgecolors='white', ax=ax)
+        nx.draw_networkx_edges(G, posiciones, edge_color='#E0E0E0', width=1.0, ax=ax)
+        
+        if congestion:
+            nx.draw_networkx_edges(G, posiciones, edgelist=[('N1', 'N3')], edge_color='darkorange', width=4.0, ax=ax)
+            x_mid, y_mid = (posiciones['N1'][0] + posiciones['N3'][0])/2, (posiciones['N1'][1] + posiciones['N3'][1])/2 + 1.2
+            ax.text(x_mid, y_mid, "⚠️ SATURADO (450m)", color='darkorange', fontsize=11, ha='center', va='center', backgroundcolor='white', fontweight='bold')
+        
+        aristas_ruta = list(zip(ruta, ruta[1:]))
+        colores_ruta = [mapa_colores[n] for n in ruta]
+        
+        nx.draw_networkx_nodes(G, posiciones, nodelist=ruta, node_color=colores_ruta, node_size=800, edgecolors='black', linewidths=2, ax=ax)
+        nx.draw_networkx_edges(G, posiciones, edgelist=aristas_ruta, edge_color='red', width=3.5, ax=ax)
+        nx.draw_networkx_labels(G, posiciones, labels={n: n for n in ruta}, font_size=10, font_weight='bold', ax=ax)
+        
+        edge_labels = nx.get_edge_attributes(G_s, 'weight')
+        path_edge_labels = { (u, v): edge_labels.get((u,v), edge_labels.get((v,u))) for u, v in aristas_ruta }
+        nx.draw_networkx_edge_labels(G_s, posiciones, edge_labels=path_edge_labels, font_color='red', font_weight='bold', bbox=dict(facecolor='white', edgecolor='red', boxstyle='round,pad=0.2'), ax=ax)
+        
+        ax.set_xlim(-2, 21); ax.set_ylim(-10, 22); plt.axis('off')
+        st.pyplot(fig)
+
 # --- 5. PROGRAMACION LINEAL ENTERA (PLE) ---
-elif menu == "5. Modelo de Programación Lineal Entera":
+elif menu == "5. Programación Lineal Entera (PLE)":
     st.header("📐 Programación Lineal Entera (PLE)")
     st.write("Resolución formal del problema empleando ecuaciones algebraicas explícitas y variables estrictamente enteras ($x_{ij} \in \{0,1\}$).")
     
